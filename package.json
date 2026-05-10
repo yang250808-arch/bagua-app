@@ -1,7 +1,7 @@
 {
   "name": "bagua-app",
   "version": "1.0.0",
-  "description": "八卦图 - 社交关系解码器",
+  "description": "世界树 - 社交关系解码器",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

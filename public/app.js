@@ -394,37 +394,84 @@ async function analyzeInput() {
   const currentProvider = config.provider || 'deepseek';
   let useVision = false;
   let visionModel = null;
+  let effectiveInput = userInput;
 
+  // ===== 处理图片 =====
   if (hasImages) {
     if (hasVisionSupport(currentProvider)) {
+      // 多模态模式：直接发图片给 API
       useVision = true;
       visionModel = getVisionModel(currentProvider);
     } else {
-      const visionList = Object.entries(VISION_PROVIDERS).map(([k, v]) => `${k} (${v})`).join('、');
-      showToast(`当前 ${currentProvider} 不支持图片识别，请切换到 ${visionList}`, 'error');
-      return;
+      // OCR 模式：浏览器端提取图片文字
+      document.getElementById('loading-overlay').classList.remove('hidden');
+      document.querySelector('.loading-text').textContent = '正在识别图片中的文字...';
+      document.querySelector('.loading-sub').textContent = '即将完成';
+      let ocrText = '';
+      try {
+        for (let i = 0; i < state.uploadedImages.length; i++) {
+          const img = state.uploadedImages[i];
+          document.querySelector('.loading-sub').textContent = `正在识别第 ${i + 1}/${state.uploadedImages.length} 张图片...`;
+          const result = await Tesseract.recognize(img.dataUrl, 'chi_sim', {
+            logger: (m) => {
+              if (m.status === 'recognizing text') {
+                document.querySelector('.loading-sub').textContent =
+                  `第 ${i + 1} 张 ${Math.round(m.progress * 100)}%`;
+              }
+            },
+          });
+          const text = (result.data.text || '').trim();
+          if (text) ocrText += text + '\n';
+        }
+      } catch (ocrErr) {
+        document.getElementById('loading-overlay').classList.add('hidden');
+        showToast('图片文字识别失败，请确保图片清晰或切换到 GLM-4V', 'error');
+        return;
+      }
+
+      // 清空图片
+      state.uploadedImages = [];
+      renderImagePreviews();
+
+      if (!ocrText.trim()) {
+        document.getElementById('loading-overlay').classList.add('hidden');
+        showToast('未能从图片中识别出文字，请检查图片清晰度', 'error');
+        return;
+      }
+
+      showToast(`已从图片中提取 ${ocrText.length} 个字符`, 'success');
+
+      // 填入输入框 + 作为有效输入
+      if (isChatMode) {
+        const ta = document.getElementById('chat-input');
+        ta.value = userInput ? userInput + '\n\n[图片识别文字]:\n' + ocrText : '[图片识别文字]:\n' + ocrText;
+        ta.scrollTop = ta.scrollHeight;
+      }
+      effectiveInput = userInput ? userInput + '\n' + ocrText : ocrText;
+
+      // 恢复加载提示
+      document.querySelector('.loading-text').textContent = '正在梳理关系脉络...';
+      document.querySelector('.loading-sub').textContent = 'AI 正在构建关系之树';
     }
   }
 
-  const userText = userInput || '请识别截图中的人物关系和事件';
+  const userText = effectiveInput || '请分析其中的人物关系和事件';
   const userPrompt = isChatMode
     ? `请深入分析以下聊天记录中的人物关系和事件：\n\n${userText}`
     : `请深入分析以下人物之间的核心事件和复杂关系，重点挖掘多人参与的共同事件：${userText}\n\n请特别注意：找出所有涉及多个人的共同事件，详细描述每个人在事件中的角色，讲述完整的故事。`;
-
-  const visionPrompt = '请先仔细识别截图中的所有文字内容，然后基于这些文字分析人物关系和事件。';
-  const finalPrompt = hasImages ? `${visionPrompt}\n\n${userPrompt}` : userPrompt;
 
   document.getElementById('loading-overlay').classList.remove('hidden');
 
   try {
     let userMessageContent;
-    if (hasImages) {
-      userMessageContent = [{ type: 'text', text: finalPrompt }];
+    if (useVision) {
+      const visionPrompt = '请先仔细识别截图中的所有文字内容，然后基于这些文字分析人物关系和事件。';
+      userMessageContent = [{ type: 'text', text: `${visionPrompt}\n\n${userPrompt}` }];
       state.uploadedImages.forEach(img => {
         userMessageContent.push({ type: 'image_url', image_url: { url: img.dataUrl } });
       });
     } else {
-      userMessageContent = finalPrompt;
+      userMessageContent = userPrompt;
     }
 
     const body = {
