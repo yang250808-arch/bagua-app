@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>世界树 - 社交关系解码器</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+
+  <!-- 设置面板 -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2><i class="fas fa-cog"></i> 设置</h2>
+        <button class="modal-close" onclick="closeSettings()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:rgba(67,160,71,0.1);padding:12px 16px;border-radius:8px;margin-bottom:20px;font-size:13px;color:var(--text-secondary);border:1px solid var(--border);">
+          <i class="fas fa-check-circle" style="color:#43a047;margin-right:6px;"></i> 网站已内置 AI，直接使用即可。以下为可选的高级设置。
+        </div>
+        <div class="form-group">
+          <label>API 服务商（快速选择）</label>
+          <select id="api-provider" onchange="applyProvider()">
+            <option value="deepseek">DeepSeek（推荐，国内直连）</option>
+            <option value="moonshot">Moonshot / Kimi（月之暗面）</option>
+            <option value="qwen">通义千问（阿里云）</option>
+            <option value="glm">智谱 GLM</option>
+            <option value="openai">OpenAI（需翻墙）</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>API 地址</label>
+          <input type="text" id="api-endpoint" placeholder="https://api.openai.com/v1/chat/completions">
+          <small>选择服务商后自动填入，也可手动修改</small>
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <div class="input-with-btn">
+            <input type="password" id="api-key" placeholder="sk-...">
+            <button onclick="toggleApiKeyVisibility()" class="btn-icon"><i class="fas fa-eye"></i></button>
+          </div>
+          <small>在对应服务商的官网注册后获取</small>
+        </div>
+        <div class="form-group">
+          <label>模型名称</label>
+          <input type="text" id="api-model" placeholder="deepseek-chat">
+        </div>
+        <div class="form-actions">
+          <button onclick="saveSettings()" class="btn btn-primary"><i class="fas fa-save"></i> 保存设置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑面板 -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2 id="edit-modal-title">编辑</h2>
+        <button class="modal-close" onclick="closeEditModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="edit-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- 顶部导航 -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="logo-icon">🌳</span>
+      <span class="logo-text">世界树</span>
+      <span class="logo-subtitle">社交关系解码器</span>
+    </div>
+    <div class="nav-actions">
+      <button class="btn btn-ghost" onclick="openSettings()" title="设置">
+        <i class="fas fa-cog"></i>
+      </button>
+    </div>
+  </nav>
+
+  <!-- 英雄区 -->
+  <section id="hero-section" class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-content">
+      <h1 class="hero-title">
+        <span class="title-highlight">千丝万缕</span>
+        <span class="title-divider">·</span>
+        <span class="title-highlight">尽在一树</span>
+      </h1>
+      <p class="hero-desc">朋友八卦听完就忘？亲戚关系傻傻分不清？娱乐圈大瓜吃不明白？<br>一键粘贴，AI 帮你理清所有关系脉络。</p>
+      <button class="btn btn-hero" onclick="scrollToInput()">
+        <i class="fas fa-seedling"></i> 开始使用
+      </button>
+    </div>
+    <div class="hero-features">
+      <div class="feature-card">
+        <i class="fas fa-comments"></i>
+        <span>粘贴聊天记录</span>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-project-diagram"></i>
+        <span>事件关系图谱</span>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-leaf"></i>
+        <span>10 种场景主题</span>
+      </div>
+      <div class="feature-card">
+        <i class="fas fa-edit"></i>
+        <span>可编辑修改</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 输入区 -->
+  <section id="input-section" class="input-section">
+    <div class="container">
+      <div class="section-header">
+        <h2><i class="fas fa-magic"></i> 输入信息</h2>
+        <p>粘贴聊天记录或输入人名，AI 为你生成关系图谱</p>
+      </div>
+
+      <div class="input-tabs">
+        <button class="tab-btn active" onclick="switchTab('chat')">
+          <i class="fas fa-comments"></i> 聊天记录
+        </button>
+        <button class="tab-btn" onclick="switchTab('names')">
+          <i class="fas fa-users"></i> 人名列表
+        </button>
+      </div>
+
+      <div id="tab-chat" class="tab-content active">
+        <textarea id="chat-input" class="input-area" rows="8"
+          placeholder="粘贴微信、抖音等聊天记录...&#10;&#10;例如：&#10;小王：你听说了吗？老李和小张在一起了！&#10;小赵：不会吧！老李不是和小陈是同学吗？&#10;小王：对啊，而且小陈还是小张的表哥！"></textarea>
+      </div>
+
+      <div id="tab-names" class="tab-content">
+        <textarea id="names-input" class="input-area" rows="4"
+          placeholder="输入人名，用逗号或空格分隔...&#10;&#10;例如：冯小刚 范冰冰 崔永元 刘震云"></textarea>
+      </div>
+
+      <div class="input-actions">
+        <button class="btn btn-primary btn-lg" onclick="analyzeInput()" id="analyze-btn">
+          <i class="fas fa-wand-magic-sparkles"></i> 生成关系图谱
+        </button>
+      </div>
+
+      <!-- 场景选择 -->
+      <div class="scene-selector">
+        <span class="scene-label"><i class="fas fa-palette"></i> 场景主题：</span>
+        <div class="scene-chips" id="scene-chips">
+          <button class="scene-chip active" data-scene="auto" onclick="selectScene('auto')">
+            <i class="fas fa-wand-magic-sparkles"></i> 自动检测
+          </button>
+          <button class="scene-chip" data-scene="family" onclick="selectScene('family')">
+            🏠 家庭温情
+          </button>
+          <button class="scene-chip" data-scene="entertainment" onclick="selectScene('entertainment')">
+            🎬 娱乐吃瓜
+          </button>
+          <button class="scene-chip" data-scene="workplace" onclick="selectScene('workplace')">
+            💼 职场风云
+          </button>
+          <button class="scene-chip" data-scene="campus" onclick="selectScene('campus')">
+            🎓 校园青春
+          </button>
+          <button class="scene-chip" data-scene="history" onclick="selectScene('history')">
+            📜 历史人物
+          </button>
+          <button class="scene-chip" data-scene="business" onclick="selectScene('business')">
+            🏢 商业帝国
+          </button>
+          <button class="scene-chip" data-scene="palace" onclick="selectScene('palace')">
+            👑 宫斗权谋
+          </button>
+          <button class="scene-chip" data-scene="martial" onclick="selectScene('martial')">
+            ⚔️ 江湖恩怨
+          </button>
+          <button class="scene-chip" data-scene="scifi" onclick="selectScene('scifi')">
+            🚀 科幻未来
+          </button>
+          <button class="scene-chip" data-scene="traditional" onclick="selectScene('traditional')">
+            🎨 国风雅韵
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 加载动画 -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">正在梳理关系脉络...</p>
+      <p class="loading-sub">AI 正在构建关系之树</p>
+    </div>
+  </div>
+
+  <!-- 结果区 -->
+  <section id="result-section" class="result-section hidden">
+    <div class="container">
+      <div class="section-header">
+        <h2><i class="fas fa-project-diagram"></i> 关系图谱</h2>
+        <div class="result-actions">
+          <button class="btn btn-ghost" onclick="toggleEdit()" id="edit-toggle-btn">
+            <i class="fas fa-edit"></i> 编辑模式
+          </button>
+          <button class="btn btn-ghost" onclick="exportImage()">
+            <i class="fas fa-download"></i> 导出图片
+          </button>
+        </div>
+      </div>
+
+      <!-- 图谱区域 -->
+      <div class="graph-wrapper">
+        <div class="graph-toolbar">
+          <button class="toolbar-btn" onclick="graphFit()" title="适应画面"><i class="fas fa-expand"></i></button>
+          <button class="toolbar-btn" onclick="graphZoom(1.2)" title="放大"><i class="fas fa-search-plus"></i></button>
+          <button class="toolbar-btn" onclick="graphZoom(0.8)" title="缩小"><i class="fas fa-search-minus"></i></button>
+          <span class="toolbar-divider"></span>
+          <button class="toolbar-btn" onclick="addNode()" title="添加人物" id="btn-add-node"><i class="fas fa-user-plus"></i></button>
+          <button class="toolbar-btn" onclick="startAddEdge()" title="添加关系" id="btn-add-edge"><i class="fas fa-link"></i></button>
+          <button class="toolbar-btn btn-danger" onclick="deleteSelected()" title="删除" id="btn-delete"><i class="fas fa-trash"></i></button>
+        </div>
+        <div id="graph-container" class="graph-container"></div>
+      </div>
+
+      <!-- 详情面板 -->
+      <div id="detail-panel" class="detail-panel hidden">
+        <div class="detail-header">
+          <h3 id="detail-title">详情</h3>
+          <button class="btn btn-ghost btn-sm" onclick="closeDetailPanel()"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="detail-content" class="detail-content"></div>
+        <div class="detail-actions">
+          <button class="btn btn-primary btn-sm" onclick="editDetail()"><i class="fas fa-edit"></i> 编辑</button>
+        </div>
+      </div>
+
+      <!-- 事件列表 -->
+      <div class="events-section">
+        <h3><i class="fas fa-list-ol"></i> 核心事件 <small>（按涉及人数和影响力排序）</small></h3>
+        <div id="events-list" class="events-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 底部 -->
+  <footer class="footer">
+    <p>世界树 &copy; 2024 | 社交关系解码器 | <i class="fas fa-tree"></i></p>
+  </footer>
+
+  <!-- Toast 通知 -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
