@@ -7,16 +7,18 @@ const http = require('http');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PROVIDERS = {
-  deepseek: { endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
-  moonshot: { endpoint: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k' },
-  qwen:     { endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-turbo' },
-  glm:      { endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-flash' },
-  openai:   { endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
+  deepseek: { endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', vision: null },
+  moonshot: { endpoint: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k', vision: null },
+  qwen:     { endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-turbo', vision: { model: 'qwen-vl-plus' } },
+  glm:      { endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-flash', vision: { model: 'glm-4v' } },
+  openai:   { endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini', vision: { model: 'gpt-4o' } },
 };
+
+const VISION_OPTIONS = { max_tokens: 4096 };
 
 const SERVER_API_KEY = process.env.API_KEY || '';
 
@@ -44,8 +46,16 @@ app.post('/api/analyze', (req, res) => {
     return res.status(400).json({ error: `API 地址格式不正确: ${endpoint}` });
   }
 
-  const model = req.body.model || PROVIDERS[provider]?.model || 'deepseek-chat';
-  const postData = JSON.stringify({ model, messages: req.body.messages });
+  let model = req.body.model || PROVIDERS[provider]?.model || 'deepseek-chat';
+  const isVision = req.body.useVision === true && PROVIDERS[provider]?.vision;
+  if (isVision) {
+    model = PROVIDERS[provider].vision.model;
+  }
+  const bodyData = { model, messages: req.body.messages };
+  if (isVision) {
+    bodyData.max_tokens = VISION_OPTIONS.max_tokens;
+  }
+  const postData = JSON.stringify(bodyData);
 
   const options = {
     hostname: url.hostname,

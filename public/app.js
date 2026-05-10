@@ -13,6 +13,7 @@ const state = {
   currentScene: 'nature',
   manualScene: 'auto',
   graphData: null,
+  uploadedImages: [],
 };
 
 const PROVIDERS = {
@@ -22,6 +23,8 @@ const PROVIDERS = {
   glm:      { endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-flash' },
   openai:   { endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
 };
+
+const VISION_PROVIDERS = { glm: 'glm-4v', openai: 'gpt-4o', qwen: 'qwen-vl-plus' };
 
 // ========== 工具函数 ==========
 function showToast(msg, type = 'info') {
@@ -37,6 +40,89 @@ function showToast(msg, type = 'info') {
 
 function scrollToInput() {
   document.getElementById('input-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ========== 图片上传与粘贴 ==========
+function setupImageUpload() {
+  const zone = document.getElementById('image-upload-zone');
+  const input = document.getElementById('image-input');
+  if (!zone) return;
+
+  zone.addEventListener('click', () => input.click());
+  input.addEventListener('change', (e) => { handleImageFiles(e.target.files); e.target.value = ''; });
+
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleImageFiles(e.dataTransfer.files);
+  });
+
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles = [];
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length) handleImageFiles(imageFiles);
+  });
+}
+
+function handleImageFiles(files) {
+  const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+  Array.from(files).forEach(file => {
+    if (!validTypes.includes(file.type)) {
+      showToast(`不支持 ${file.type} 格式，仅支持 PNG/JPG/WebP/GIF`, 'error');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast(`图片 ${file.name} 超过 10MB 限制`, 'error');
+      return;
+    }
+    readImageAsDataUrl(file);
+  });
+}
+
+function readImageAsDataUrl(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    state.uploadedImages.push({ id: Date.now() + '_' + Math.random().toString(36).slice(2, 6), dataUrl: e.target.result, name: file.name });
+    renderImagePreviews();
+    showToast(`已添加图片：${file.name}`, 'success');
+  };
+  reader.onerror = () => showToast(`读取图片失败：${file.name}`, 'error');
+  reader.readAsDataURL(file);
+}
+
+function renderImagePreviews() {
+  const container = document.getElementById('image-preview-container');
+  if (!container) return;
+  if (state.uploadedImages.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = state.uploadedImages.map(img => `
+    <div class="image-preview-item">
+      <img src="${img.dataUrl}" alt="${img.name}">
+      <button class="image-preview-remove" onclick="removeImage('${img.id}')" title="删除">&times;</button>
+    </div>
+  `).join('');
+}
+
+function removeImage(id) {
+  state.uploadedImages = state.uploadedImages.filter(img => img.id !== id);
+  renderImagePreviews();
+  showToast('已移除图片', 'info');
+}
+
+function hasVisionSupport(provider) {
+  return !!VISION_PROVIDERS[provider];
+}
+
+function getVisionModel(provider) {
+  return VISION_PROVIDERS[provider] || null;
 }
 
 function setTheme(theme) {
@@ -170,31 +256,62 @@ async function analyzeInput() {
   const isChatMode = document.getElementById('tab-chat').classList.contains('active');
   const userInput = isChatMode ? chatInput : namesInput;
 
-  if (!userInput) {
-    showToast('请先输入聊天记录或人名', 'error');
+  const hasImages = state.uploadedImages.length > 0;
+
+  if (!userInput && !hasImages) {
+    showToast('请先输入聊天记录、人名或上传截图', 'error');
     return;
   }
 
+  const config = getSettings();
+  const currentProvider = config.provider || 'deepseek';
+  let useVision = false;
+  let visionModel = null;
+
+  if (hasImages) {
+    if (hasVisionSupport(currentProvider)) {
+      useVision = true;
+      visionModel = getVisionModel(currentProvider);
+    } else {
+      const visionList = Object.entries(VISION_PROVIDERS).map(([k, v]) => `${k} (${v})`).join('、');
+      showToast(`当前 ${currentProvider} 不支持图片识别，请切换到 ${visionList}`, 'error');
+      return;
+    }
+  }
+
+  const userText = userInput || '请识别截图中的人物关系和事件';
   const userPrompt = isChatMode
-    ? `请深入分析以下聊天记录中的人物关系和事件：\n\n${userInput}`
-    : `请深入分析以下人物之间的核心事件和复杂关系，重点挖掘多人参与的共同事件：${userInput}\n\n请特别注意：找出所有涉及多个人的共同事件，详细描述每个人在事件中的角色，讲述完整的故事。`;
+    ? `请深入分析以下聊天记录中的人物关系和事件：\n\n${userText}`
+    : `请深入分析以下人物之间的核心事件和复杂关系，重点挖掘多人参与的共同事件：${userText}\n\n请特别注意：找出所有涉及多个人的共同事件，详细描述每个人在事件中的角色，讲述完整的故事。`;
+
+  const visionPrompt = '请先仔细识别截图中的所有文字内容，然后基于这些文字分析人物关系和事件。';
+  const finalPrompt = hasImages ? `${visionPrompt}\n\n${userPrompt}` : userPrompt;
 
   document.getElementById('loading-overlay').classList.remove('hidden');
 
   try {
-    // 用户自己的设置（可选），没有就用服务器的内置 AI
-    const config = getSettings();
+    let userMessageContent;
+    if (hasImages) {
+      userMessageContent = [{ type: 'text', text: finalPrompt }];
+      state.uploadedImages.forEach(img => {
+        userMessageContent.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+      });
+    } else {
+      userMessageContent = finalPrompt;
+    }
+
     const body = {
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
+        { role: 'user', content: userMessageContent },
       ],
+      useVision: useVision,
     };
     if (config.apiKey) {
       body.apiKey = config.apiKey;
       body.apiEndpoint = config.endpoint;
       body.provider = config.provider;
-      body.model = config.model;
+      body.model = useVision ? visionModel : config.model;
     }
 
     const response = await fetch('/api/analyze', {
@@ -797,6 +914,7 @@ function exportImage() {
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
+  setupImageUpload();
 
   document.getElementById('settings-modal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeSettings();

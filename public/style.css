@@ -166,6 +166,51 @@ body {
 
 .input-actions { text-align: center; margin-top: 24px; }
 
+/* ===== 图片上传区 ===== */
+.image-section { margin-top: 24px; }
+.image-upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 30px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: var(--bg-primary);
+}
+.image-upload-zone:hover { border-color: var(--accent); background: var(--bg-card); }
+.image-upload-zone.dragover { border-color: var(--accent); background: rgba(67,160,71,0.08); }
+.upload-icon { font-size: 32px; color: var(--accent); margin-bottom: 10px; }
+.upload-text { font-size: 14px; color: var(--text-secondary); margin-bottom: 6px; }
+.upload-text kbd {
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 12px; font-family: var(--font-body);
+}
+.upload-hint { font-size: 12px; color: var(--text-secondary); opacity: 0.7; }
+.image-preview-container {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin-top: 12px;
+}
+.image-preview-item {
+  position: relative; width: 120px; height: 90px;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border);
+  transition: all 0.3s;
+}
+.image-preview-item:hover { border-color: var(--accent); }
+.image-preview-item img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.image-preview-remove {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.5); color: #fff;
+  font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.image-preview-remove:hover { background: rgba(211,47,47,0.8); }
+
 .scene-selector {
   margin-top: 30px; padding-top: 24px;
   border-top: 1px solid var(--border);
