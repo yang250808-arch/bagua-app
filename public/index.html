@@ -51,7 +51,17 @@
           <input type="text" id="api-model" placeholder="deepseek-chat">
         </div>
         <div class="form-actions">
-          <button onclick="saveSettings()" class="btn btn-primary"><i class="fas fa-save"></i> 保存设置</button>
+          <button onclick="saveSettings()" class="btn btn-primary"><i class="fas fa-save"></i> 保存当前配置</button>
+        </div>
+
+        <!-- 已保存的 API 配置 -->
+        <div class="saved-configs-section" style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <label style="font-size:14px;font-weight:500;"><i class="fas fa-sync-alt" style="margin-right:6px;"></i> 已保存的账号（点击切换）</label>
+          </div>
+          <div id="saved-configs-list" class="saved-configs-list">
+            <div style="color:var(--text-secondary);font-size:13px;padding:8px 0;">还没有保存的账号，填写上方信息后点击"保存"</div>
+          </div>
         </div>
       </div>
     </div>

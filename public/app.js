@@ -144,7 +144,29 @@ function getCSSVar(name) {
 }
 
 // ========== 设置管理 ==========
-function openSettings() { document.getElementById('settings-modal').classList.remove('hidden'); }
+const PROVIDER_ICONS = {
+  deepseek: { bg: '#4A6CF7', label: 'DS' },
+  moonshot: { bg: '#7C3AED', label: 'MS' },
+  qwen:     { bg: '#FF6A00', label: 'QW' },
+  glm:      { bg: '#0077FF', label: 'GLM' },
+  openai:   { bg: '#10A37F', label: 'GPT' },
+};
+
+function openSettings() {
+  document.getElementById('settings-modal').classList.remove('hidden');
+  renderSavedConfigs();
+  // 不自动填充密码框（安全考虑），只提示已保存的账号
+  const activeProvider = localStorage.getItem('bagua_active') || 'deepseek';
+  const configs = loadAllConfigs();
+  if (configs[activeProvider]) {
+    document.getElementById('api-provider').value = activeProvider;
+    document.getElementById('api-endpoint').value = configs[activeProvider].endpoint || PROVIDERS[activeProvider]?.endpoint || '';
+    document.getElementById('api-model').value = configs[activeProvider].model || PROVIDERS[activeProvider]?.model || '';
+    // 密码框留空，提示已保存
+    document.getElementById('api-key').placeholder = '已保存，留空则沿用';
+    document.getElementById('api-key').value = '';
+  }
+}
 function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
 
 function toggleApiKeyVisibility() {
@@ -160,36 +182,141 @@ function applyProvider() {
   }
 }
 
+function loadAllConfigs() {
+  try {
+    const raw = localStorage.getItem('bagua_configs');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // 迁移旧格式
+  try {
+    const old = localStorage.getItem('bagua_config');
+    if (old) {
+      const cfg = JSON.parse(old);
+      if (cfg.provider) {
+        const migrated = {};
+        migrated[cfg.provider] = { apiKey: cfg.apiKey || '', endpoint: cfg.endpoint || '', model: cfg.model || '' };
+        localStorage.setItem('bagua_configs', JSON.stringify(migrated));
+        localStorage.setItem('bagua_active', cfg.provider);
+        localStorage.removeItem('bagua_config');
+        return migrated;
+      }
+    }
+  } catch {}
+  return {};
+}
+
 function saveSettings() {
-  const config = {
-    provider: document.getElementById('api-provider').value,
-    endpoint: document.getElementById('api-endpoint').value.trim(),
-    apiKey: document.getElementById('api-key').value.trim(),
-    model: document.getElementById('api-model').value.trim(),
-  };
-  localStorage.setItem('bagua_config', JSON.stringify(config));
+  const provider = document.getElementById('api-provider').value;
+  const endpoint = document.getElementById('api-endpoint').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  const model = document.getElementById('api-model').value.trim();
+  const configs = loadAllConfigs();
+
+  // 如果密码框为空，保留旧 key
+  const finalKey = apiKey || configs[provider]?.apiKey || '';
+  if (!finalKey) {
+    showToast('请输入 API Key', 'error');
+    return;
+  }
+
+  configs[provider] = { apiKey: finalKey, endpoint, model };
+  localStorage.setItem('bagua_configs', JSON.stringify(configs));
+  localStorage.setItem('bagua_active', provider);
   closeSettings();
-  showToast('设置已保存', 'success');
+  showToast(`已保存 ${PROVIDERS[provider] ? provider : '自定义'} 配置`, 'success');
+}
+
+function switchToProvider(provider) {
+  const configs = loadAllConfigs();
+  if (!configs[provider]) {
+    showToast('该服务商还没有保存的配置，请先设置', 'error');
+    return;
+  }
+  localStorage.setItem('bagua_active', provider);
+  renderSavedConfigs();
+  showToast(`已切换到 ${PROVIDERS[provider] ? provider : '自定义'}`, 'success');
+}
+
+function deleteSavedConfig(provider) {
+  const configs = loadAllConfigs();
+  delete configs[provider];
+  localStorage.setItem('bagua_configs', JSON.stringify(configs));
+  const active = localStorage.getItem('bagua_active') || '';
+  if (active === provider) {
+    const keys = Object.keys(configs);
+    localStorage.setItem('bagua_active', keys.length > 0 ? keys[0] : 'deepseek');
+  }
+  renderSavedConfigs();
+  showToast('已删除配置', 'info');
+}
+
+function renderSavedConfigs() {
+  const container = document.getElementById('saved-configs-list');
+  if (!container) return;
+  const configs = loadAllConfigs();
+  const activeProvider = localStorage.getItem('bagua_active') || 'deepseek';
+  const keys = Object.keys(configs);
+
+  if (keys.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;padding:8px 0;">还没有保存的账号，填写上方信息后点击"保存"</div>';
+    return;
+  }
+
+  container.innerHTML = keys.map(key => {
+    const cfg = configs[key];
+    const icon = PROVIDER_ICONS[key] || { bg: '#666', label: key.slice(0, 2).toUpperCase() };
+    const isActive = key === activeProvider;
+    const providerName = PROVIDERS[key] ? key : '自定义';
+    const modelShort = cfg.model ? cfg.model.substring(0, 20) : '默认模型';
+    return `
+      <div class="saved-config-card ${isActive ? 'active' : ''}" onclick="switchToProvider('${key}')">
+        <div class="saved-config-info">
+          <div class="saved-config-icon" style="background:${icon.bg};">${icon.label}</div>
+          <div>
+            <div class="saved-config-name">${providerName} ${isActive ? '✓' : ''}</div>
+            <div class="saved-config-model">${modelShort} · Key ${cfg.apiKey ? cfg.apiKey.substring(0, 8) + '...' : '未设置'}</div>
+          </div>
+        </div>
+        <div class="saved-config-actions" onclick="event.stopPropagation()">
+          <button class="saved-config-btn switch" onclick="switchToProvider('${key}')">切换</button>
+          <button class="saved-config-btn delete" onclick="deleteSavedConfig('${key}')"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function loadSettings() {
-  const saved = localStorage.getItem('bagua_config');
-  if (saved) {
-    const config = JSON.parse(saved);
-    if (config.provider) document.getElementById('api-provider').value = config.provider;
-    if (config.endpoint) document.getElementById('api-endpoint').value = config.endpoint;
-    if (config.apiKey) document.getElementById('api-key').value = config.apiKey;
-    if (config.model) document.getElementById('api-model').value = config.model;
+  const activeProvider = localStorage.getItem('bagua_active') || 'deepseek';
+  const configs = loadAllConfigs();
+  const cfg = configs[activeProvider];
+
+  if (cfg) {
+    document.getElementById('api-provider').value = activeProvider;
+    if (cfg.endpoint) document.getElementById('api-endpoint').value = cfg.endpoint;
+    document.getElementById('api-key').placeholder = '已保存，留空则沿用';
+    if (cfg.model) document.getElementById('api-model').value = cfg.model;
   } else {
     applyProvider();
   }
 }
 
 function getSettings() {
-  const saved = localStorage.getItem('bagua_config');
-  if (saved) return JSON.parse(saved);
+  const activeProvider = localStorage.getItem('bagua_active') || 'deepseek';
+  const configs = loadAllConfigs();
+  const cfg = configs[activeProvider];
+
+  if (cfg) {
+    return {
+      provider: activeProvider,
+      endpoint: cfg.endpoint || PROVIDERS[activeProvider]?.endpoint || '',
+      apiKey: cfg.apiKey || '',
+      model: cfg.model || PROVIDERS[activeProvider]?.model || '',
+    };
+  }
+
   return {
-    provider: document.getElementById('api-provider').value,
+    provider: activeProvider,
     endpoint: document.getElementById('api-endpoint').value.trim(),
     apiKey: document.getElementById('api-key').value.trim(),
     model: document.getElementById('api-model').value.trim(),
